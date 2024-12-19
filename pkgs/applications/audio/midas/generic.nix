@@ -1,4 +1,9 @@
-{ stdenv, fetchurl, lib, libX11, libXext, alsa-lib, freetype, brand, type, version, homepage, url, sha256, ... }:
+{ stdenv, fetchurl, lib, libX11, libXext, alsa-lib, freetype, brand, type, version, homepage, url, curl, gnutls, sha256, ... }:
+
+let
+    curlWithGnuTls = curl.override { gnutlsSupport = true; opensslSupport = false; };
+in
+
 stdenv.mkDerivation rec {
   pname = "${lib.toLower type}-edit";
   inherit version;

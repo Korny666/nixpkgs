@@ -59,6 +59,8 @@ stdenv.mkDerivation (finalAttrs: {
     hash = "sha256-21nPDWccpuf1wsXsF3CEozp54EyX5xzxg6XN6iNQVOs=";
   };
 
+   patches = [ ./ZZZgnutls-build.patch ];
+
   # this could be accomplished by updateAutotoolsGnuConfigScriptsHook, but that causes infinite recursion
   # necessary for FreeBSD code path in configure
   postPatch = ''
@@ -123,6 +125,7 @@ stdenv.mkDerivation (finalAttrs: {
       "--enable-versioned-symbols"
       # Build without manual
       "--disable-manual"
+      "--with-gnutls"
       (lib.enableFeature c-aresSupport "ares")
       (lib.enableFeature ldapSupport "ldap")
       (lib.enableFeature ldapSupport "ldaps")

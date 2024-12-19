@@ -1,0 +1,300 @@
+From: Steve McIntyre <93sam@debian.org>
+Date: Mon, 5 Aug 2024 11:51:56 +0100
+Subject: Build with GnuTLS.
+
+Origin: vendor
+Forwarded: not-needed
+Last-Update: 2024-11-06
+---
+ configure.ac                   | 12 +++++++-
+ docs/examples/Makefile.am      |  2 +-
+ lib/Makefile.am                | 62 +++++++++++++++++++++++++++++++++++++++++-
+ src/Makefile.am                |  2 +-
+ tests/http/clients/Makefile.am |  2 +-
+ tests/http/clients/Makefile.in | 20 +++++++-------
+ tests/libtest/Makefile.am      |  4 +--
+ 7 files changed, 87 insertions(+), 17 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index a8bd87e..7d09e3c 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -264,6 +264,16 @@ AS_HELP_STRING([--with-gnutls=PATH],[where to look for GnuTLS, PATH points to th
+   fi
+ ])
+ 
++# Debian-specific changes - tweak build settings if we're building with gnutls
++AM_CONDITIONAL(GNUTLSBUILD, test x$OPT_GNUTLS != xno)
++if test X$OPT_GNUTLS != Xno; then
++  AC_SUBST(LIBCURL_FILESTUB, ["libcurl-gnutls"])
++  AC_SUBST(CURL_LIBCURL_VERSIONED_SYMBOLS_SONAME, [3])
++else
++  AC_SUBST(LIBCURL_FILESTUB, ["libcurl"])
++  AC_SUBST(CURL_LIBCURL_VERSIONED_SYMBOLS_SONAME, [4])
++fi
++
+ OPT_MBEDTLS=no
+ AC_ARG_WITH(mbedtls,dnl
+ AS_HELP_STRING([--with-mbedtls=PATH],[where to look for mbedTLS, PATH points to the installation root]),[
+@@ -2670,7 +2680,7 @@ AS_HELP_STRING([--disable-versioned-symbols], [Disable versioned symbols in shar
+ )
+ 
+ AC_SUBST([CURL_LIBCURL_VERSIONED_SYMBOLS_PREFIX], ["$versioned_symbols_flavour"])
+-AC_SUBST([CURL_LIBCURL_VERSIONED_SYMBOLS_SONAME], ["4"])  dnl Keep in sync with VERSIONCHANGE - VERSIONDEL in lib/Makefile.soname
++# AC_SUBST([CURL_LIBCURL_VERSIONED_SYMBOLS_SONAME], ["4"])  dnl Keep in sync with VERSIONCHANGE - VERSIONDEL in lib/Makefile.soname
+ AM_CONDITIONAL([CURL_LT_SHLIB_USE_VERSIONED_SYMBOLS],
+   [test "x$versioned_symbols" = 'xyes'])
+ 
+diff --git a/docs/examples/Makefile.am b/docs/examples/Makefile.am
+index e5ff9ff..395eef2 100644
+--- a/docs/examples/Makefile.am
++++ b/docs/examples/Makefile.am
+@@ -49,7 +49,7 @@ endif
+ LIBS = $(BLANK_AT_MAKETIME)
+ 
+ # Dependencies
+-LDADD = $(LIBDIR)/libcurl.la @LIBCURL_PC_LIBS_PRIVATE@
++LDADD = $(LIBDIR)/$(LIBCURL_FILESTUB).la @LIBCURL_PC_LIBS_PRIVATE@
+ 
+ # This might hold -Werror
+ CFLAGS += @CURL_CFLAG_EXTRAS@
+diff --git a/lib/Makefile.am b/lib/Makefile.am
+index 3a40280..17fafc7 100644
+--- a/lib/Makefile.am
++++ b/lib/Makefile.am
+@@ -34,7 +34,11 @@ EXTRA_DIST = Makefile.mk config-win32.h config-win32ce.h config-plan9.h \
+  $(CMAKE_DIST) setup-win32.h Makefile.soname optiontable.pl libcurl.def \
+  $(CHECKSRC_DIST)
+ 
++if GNUTLSBUILD
++lib_LTLIBRARIES = libcurl-gnutls.la
++else
+ lib_LTLIBRARIES = libcurl.la
++endif
+ 
+ if BUILD_UNITTESTS
+ noinst_LTLIBRARIES = libcurlu.la
+@@ -82,59 +86,115 @@ endif
+ libcurl_unity.c: $(top_srcdir)/scripts/mk-unity.pl $(CSOURCES)
+ 	@PERL@ $(top_srcdir)/scripts/mk-unity.pl $(srcdir) $(CSOURCES) --exclude $(curl_EXCLUDE) > libcurl_unity.c
+ 
++if GNUTLSBUILD
++nodist_libcurl_gnutls_la_SOURCES = libcurl_unity.c
++libcurl_gnutls_la_SOURCES = $(curl_EXCLUDE)
++nodist_libcurlu_la_SOURCES = libcurl_unity.c
++libcurlu_la_SOURCES = $(curl_EXCLUDE)
++else
+ nodist_libcurl_la_SOURCES = libcurl_unity.c
+ libcurl_la_SOURCES = $(curl_EXCLUDE)
+ nodist_libcurlu_la_SOURCES = libcurl_unity.c
+ libcurlu_la_SOURCES = $(curl_EXCLUDE)
++endif
+ CLEANFILES = libcurl_unity.c
+ else
++if GNUTLSBUILD
++libcurl_gnutls_la_SOURCES = $(CSOURCES) $(HHEADERS)
++libcurlu_la_SOURCES = $(CSOURCES) $(HHEADERS)
++else
+ libcurl_la_SOURCES = $(CSOURCES) $(HHEADERS)
+ libcurlu_la_SOURCES = $(CSOURCES) $(HHEADERS)
+ endif
++endif
+ 
++if GNUTLSBUILD
++libcurl_gnutls_la_CPPFLAGS_EXTRA =
++libcurl_gnutls_la_LDFLAGS_EXTRA =
++libcurl_gnutls_la_CFLAGS_EXTRA =
++else
+ libcurl_la_CPPFLAGS_EXTRA =
+ libcurl_la_LDFLAGS_EXTRA =
+ libcurl_la_CFLAGS_EXTRA =
++endif
+ 
+ if CURL_LT_SHLIB_USE_VERSION_INFO
++if GNUTLSBUILD
++libcurl_gnutls_la_LDFLAGS_EXTRA += $(VERSIONINFO)
++else
+ libcurl_la_LDFLAGS_EXTRA += $(VERSIONINFO)
+ endif
++endif
+ 
+ if CURL_LT_SHLIB_USE_NO_UNDEFINED
++if GNUTLSBUILD
++libcurl_gnutls_la_LDFLAGS_EXTRA += -no-undefined
++else
+ libcurl_la_LDFLAGS_EXTRA += -no-undefined
+ endif
++endif
+ 
+ if CURL_LT_SHLIB_USE_MIMPURE_TEXT
++if GNUTLSBUILD
++libcurl_gnutls_la_LDFLAGS_EXTRA += -mimpure-text
++else
+ libcurl_la_LDFLAGS_EXTRA += -mimpure-text
+ endif
++endif
+ 
+ if CURL_LT_SHLIB_USE_VERSIONED_SYMBOLS
++if GNUTLSBUILD
++libcurl_gnutls_la_LDFLAGS_EXTRA += -Wl,--version-script=libcurl.vers
++else
+ libcurl_la_LDFLAGS_EXTRA += -Wl,--version-script=libcurl.vers
++endif
+ else
+ # if symbol-hiding is enabled, hide them!
+ if DOING_CURL_SYMBOL_HIDING
++if GNUTLSBUILD
++libcurl_gnutls_la_LDFLAGS_EXTRA += -export-symbols-regex '^curl_.*'
++else
+ libcurl_la_LDFLAGS_EXTRA += -export-symbols-regex '^curl_.*'
+ endif
+ endif
++endif
+ 
+ if USE_CPPFLAG_CURL_STATICLIB
++if GNUTLSBUILD
++libcurl_gnutls_la_CPPFLAGS_EXTRA += -DCURL_STATICLIB
++else
+ libcurl_la_CPPFLAGS_EXTRA += -DCURL_STATICLIB
++endif
+ else
+ if HAVE_WINDRES
++if GNUTLSBUILD
++libcurl_gnutls_la_SOURCES += $(LIB_RCFILES)
++else
+ libcurl_la_SOURCES += $(LIB_RCFILES)
++endif
+ $(LIB_RCFILES): $(top_srcdir)/include/curl/curlver.h
+ endif
+ endif
+ 
+ if DOING_CURL_SYMBOL_HIDING
++if GNUTLSBUILD
++libcurl_gnutls_la_CPPFLAGS_EXTRA += -DCURL_HIDDEN_SYMBOLS
++libcurl_gnutls_la_CFLAGS_EXTRA += $(CFLAG_CURL_SYMBOL_HIDING)
++else
+ libcurl_la_CPPFLAGS_EXTRA += -DCURL_HIDDEN_SYMBOLS
+ libcurl_la_CFLAGS_EXTRA += $(CFLAG_CURL_SYMBOL_HIDING)
+ endif
++endif
+ 
++if GNUTLSBUILD
++libcurl_gnutls_la_CPPFLAGS = $(AM_CPPFLAGS) $(libcurl_gnutls_la_CPPFLAGS_EXTRA)
++libcurl_gnutls_la_LDFLAGS = $(AM_LDFLAGS) $(libcurl_gnutls_la_LDFLAGS_EXTRA) $(CURL_LDFLAGS_LIB) $(LIBCURL_PC_LIBS_PRIVATE)
++libcurl_gnutls_la_CFLAGS = $(AM_CFLAGS) $(libcurl_gnutls_la_CFLAGS_EXTRA)
++else
+ libcurl_la_CPPFLAGS = $(AM_CPPFLAGS) $(libcurl_la_CPPFLAGS_EXTRA)
+ libcurl_la_LDFLAGS = $(AM_LDFLAGS) $(libcurl_la_LDFLAGS_EXTRA) $(CURL_LDFLAGS_LIB) $(LIBCURL_PC_LIBS_PRIVATE)
+ libcurl_la_CFLAGS = $(AM_CFLAGS) $(libcurl_la_CFLAGS_EXTRA)
+-
++endif
+ libcurlu_la_CPPFLAGS = $(AM_CPPFLAGS) -DCURL_STATICLIB -DUNITTESTS
+ libcurlu_la_LDFLAGS = $(AM_LDFLAGS) -static $(LIBCURL_PC_LIBS_PRIVATE)
+ libcurlu_la_CFLAGS = $(AM_CFLAGS)
+diff --git a/src/Makefile.am b/src/Makefile.am
+index 98cc194..48393be 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -97,7 +97,7 @@ CFLAGS += @CURL_CFLAG_EXTRAS@
+ # Prevent LIBS from being used for all link targets
+ LIBS = $(BLANK_AT_MAKETIME)
+ 
+-curl_LDADD = $(top_builddir)/lib/libcurl.la @LIBCURL_PC_LIBS_PRIVATE@
++curl_LDADD = $(top_builddir)/lib/$(LIBCURL_FILESTUB).la @LIBCURL_PC_LIBS_PRIVATE@
+ 
+ # if unit tests are enabled, build a static library to link them with
+ if BUILD_UNITTESTS
+diff --git a/tests/http/clients/Makefile.am b/tests/http/clients/Makefile.am
+index 935614c..2bfcba6 100644
+--- a/tests/http/clients/Makefile.am
++++ b/tests/http/clients/Makefile.am
+@@ -50,7 +50,7 @@ endif
+ LIBS = $(BLANK_AT_MAKETIME)
+ 
+ # Dependencies
+-LDADD = $(LIBDIR)/libcurl.la @LIBCURL_PC_LIBS_PRIVATE@
++LDADD = $(LIBDIR)/$(LIBCURL_FILESTUB).la @LIBCURL_PC_LIBS_PRIVATE@
+ 
+ # This might hold -Werror
+ CFLAGS += @CURL_CFLAG_EXTRAS@
+diff --git a/tests/http/clients/Makefile.in b/tests/http/clients/Makefile.in
+index 924559a..a3fbe0f 100644
+--- a/tests/http/clients/Makefile.in
++++ b/tests/http/clients/Makefile.in
+@@ -177,7 +177,7 @@ CONFIG_CLEAN_VPATH_FILES =
+ h2_pausing_SOURCES = h2-pausing.c
+ h2_pausing_OBJECTS = h2-pausing.$(OBJEXT)
+ h2_pausing_LDADD = $(LDADD)
+-h2_pausing_DEPENDENCIES = $(LIBDIR)/libcurl.la
++h2_pausing_DEPENDENCIES = $(LIBDIR)/$(LIBCURL_FILESTUB).la
+ AM_V_lt = $(am__v_lt_@AM_V@)
+ am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
+ am__v_lt_0 = --silent
+@@ -185,35 +185,35 @@ am__v_lt_1 =
+ h2_serverpush_SOURCES = h2-serverpush.c
+ h2_serverpush_OBJECTS = h2-serverpush.$(OBJEXT)
+ h2_serverpush_LDADD = $(LDADD)
+-h2_serverpush_DEPENDENCIES = $(LIBDIR)/libcurl.la
++h2_serverpush_DEPENDENCIES = $(LIBDIR)/$(LIBCURL_FILESTUB).la
+ h2_upgrade_extreme_SOURCES = h2-upgrade-extreme.c
+ h2_upgrade_extreme_OBJECTS = h2-upgrade-extreme.$(OBJEXT)
+ h2_upgrade_extreme_LDADD = $(LDADD)
+-h2_upgrade_extreme_DEPENDENCIES = $(LIBDIR)/libcurl.la
++h2_upgrade_extreme_DEPENDENCIES = $(LIBDIR)/$(LIBCURL_FILESTUB).la
+ hx_download_SOURCES = hx-download.c
+ hx_download_OBJECTS = hx-download.$(OBJEXT)
+ hx_download_LDADD = $(LDADD)
+-hx_download_DEPENDENCIES = $(LIBDIR)/libcurl.la
++hx_download_DEPENDENCIES = $(LIBDIR)/$(LIBCURL_FILESTUB).la
+ hx_upload_SOURCES = hx-upload.c
+ hx_upload_OBJECTS = hx-upload.$(OBJEXT)
+ hx_upload_LDADD = $(LDADD)
+-hx_upload_DEPENDENCIES = $(LIBDIR)/libcurl.la
++hx_upload_DEPENDENCIES = $(LIBDIR)/$(LIBCURL_FILESTUB).la
+ tls_session_reuse_SOURCES = tls-session-reuse.c
+ tls_session_reuse_OBJECTS = tls-session-reuse.$(OBJEXT)
+ tls_session_reuse_LDADD = $(LDADD)
+-tls_session_reuse_DEPENDENCIES = $(LIBDIR)/libcurl.la
++tls_session_reuse_DEPENDENCIES = $(LIBDIR)/$(LIBCURL_FILESTUB).la
+ upload_pausing_SOURCES = upload-pausing.c
+ upload_pausing_OBJECTS = upload-pausing.$(OBJEXT)
+ upload_pausing_LDADD = $(LDADD)
+-upload_pausing_DEPENDENCIES = $(LIBDIR)/libcurl.la
++upload_pausing_DEPENDENCIES = $(LIBDIR)/$(LIBCURL_FILESTUB).la
+ ws_data_SOURCES = ws-data.c
+ ws_data_OBJECTS = ws-data.$(OBJEXT)
+ ws_data_LDADD = $(LDADD)
+-ws_data_DEPENDENCIES = $(LIBDIR)/libcurl.la
++ws_data_DEPENDENCIES = $(LIBDIR)/$(LIBCURL_FILESTUB).la
+ ws_pingpong_SOURCES = ws-pingpong.c
+ ws_pingpong_OBJECTS = ws-pingpong.$(OBJEXT)
+ ws_pingpong_LDADD = $(LDADD)
+-ws_pingpong_DEPENDENCIES = $(LIBDIR)/libcurl.la
++ws_pingpong_DEPENDENCIES = $(LIBDIR)/$(LIBCURL_FILESTUB).la
+ AM_V_P = $(am__v_P_@AM_V@)
+ am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
+ am__v_P_0 = false
+@@ -535,7 +535,7 @@ AM_CPPFLAGS = -I$(top_srcdir)/include -I$(top_builddir)/lib \
+ LIBDIR = $(top_builddir)/lib
+ 
+ # Dependencies
+-LDADD = $(LIBDIR)/libcurl.la @LIBCURL_PC_LIBS_PRIVATE@
++LDADD = $(LIBDIR)/$(LIBCURL_FILESTUB).la @LIBCURL_PC_LIBS_PRIVATE@
+ CHECKSRC = $(CS_$(V))
+ CS_0 = @echo "  RUN     " $@;
+ CS_1 = 
+diff --git a/tests/libtest/Makefile.am b/tests/libtest/Makefile.am
+index 809731d..cabe437 100644
+--- a/tests/libtest/Makefile.am
++++ b/tests/libtest/Makefile.am
+@@ -49,8 +49,8 @@ CLEANFILES = lib1521.c
+ # Prevent LIBS from being used for all link targets
+ LIBS = $(BLANK_AT_MAKETIME)
+ 
+-SUPPORTFILES_LIBS = $(top_builddir)/lib/libcurl.la @LIBCURL_PC_LIBS_PRIVATE@
+-TESTUTIL_LIBS = $(top_builddir)/lib/libcurl.la @LIBCURL_PC_LIBS_PRIVATE@
++SUPPORTFILES_LIBS = $(top_builddir)/lib/$(LIBCURL_FILESTUB).la @LIBCURL_PC_LIBS_PRIVATE@
++TESTUTIL_LIBS = $(top_builddir)/lib/$(LIBCURL_FILESTUB).la @LIBCURL_PC_LIBS_PRIVATE@
+ 
+ # Dependencies (may need to be overridden)
+ LDADD = $(SUPPORTFILES_LIBS)
