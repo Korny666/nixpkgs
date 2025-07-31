@@ -14235,6 +14235,8 @@ with pkgs;
 
   x32edit = callPackage ../applications/audio/midas/x32edit.nix { };
 
+  wingEdit = callPackage ../applications/audio/midas/wingEdit.nix { };
+
   xbindkeys-config = callPackage ../tools/X11/xbindkeys-config {
     gtk = gtk2;
   };
