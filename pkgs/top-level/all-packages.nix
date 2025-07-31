@@ -10955,6 +10955,8 @@ with pkgs;
 
   x32edit = callPackage ../applications/audio/midas/x32edit.nix { };
 
+  wingEdit = callPackage ../applications/audio/midas/wingEdit.nix { };
+
   kodiPackages = recurseIntoAttrs (kodi.packages);
 
   kodi = callPackage ../applications/video/kodi {
