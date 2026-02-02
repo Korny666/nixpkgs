@@ -39,20 +39,52 @@ stdenv.mkDerivation (finalAttrs: {
   dontStrip = true;
 
   installPhase = ''
-    mkdir -p $out/bin
-    cp ${type}-Edit $out/bin/.${finalAttrs.pname}
+      mkdir -p "$out/bin"
 
-    cat >$out/bin/${finalAttrs.pname} <<EOF
+      # Original-Binary aus dem Tarball installieren (liegt laut Log als ./WING-Edit vor)
+      install -m755 "${type}-Edit" "$out/bin/.${finalAttrs.pname}"
+
+      # Wrapper erzeugen (ohne $out zur Laufzeit)
+      cat >"$out/bin/${finalAttrs.pname}" <<'EOF'
     #!${runtimeShell} -eu
+
+    # Pfad zum "hidden" Binary neben dem Wrapper
+    DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+
+    # Runtime vars (Wayland/X11) – Nix-Interpolation vermeiden mit ''${...}
+    if [ -z "''${XDG_RUNTIME_DIR:-}" ]; then
+      XDG_RUNTIME_DIR="/run/user/$(id -u)"
+    fi
+
     exec ${lib.getExe bubblewrap} \
-      --dev-bind / / \
+      --proc /proc \
+      --dev /dev \
+      --dev-bind /dev/snd /dev/snd \
+      --dev-bind /dev/bus/usb /dev/bus/usb \
+      --ro-bind /nix /nix \
+      --ro-bind /etc /etc \
+      --bind /run /run \
+      --tmpfs /tmp \
+      \
+      --dir /lib \
+      --dir /lib64 \
+      --dir /usr \
+      --dir /usr/lib \
+      --dir /usr/share \
+      \
       --ro-bind "${debian}/lib" /lib \
       --ro-bind "${debian}/lib64" /lib64 \
-      --tmpfs /usr \
       --ro-bind "${debian}/usr/lib" /usr/lib \
-      $out/bin/.${finalAttrs.pname}
+      --ro-bind "${debian}/usr/share" /usr/share \
+      \
+      --bind "''${XDG_RUNTIME_DIR}" "''${XDG_RUNTIME_DIR}" \
+      --bind-try /tmp/.X11-unix /tmp/.X11-unix \
+      --bind "''${HOME}" "''${HOME}" \
+      --chdir "''${PWD}" \
+      "$DIR/.${finalAttrs.pname}"
     EOF
-    chmod 755 $out/bin/${finalAttrs.pname}
+
+      chmod 755 "$out/bin/${finalAttrs.pname}"
   '';
 
   passthru.deps =
